@@ -1,21 +1,21 @@
 
 {
-  "name": "aura-reader",
+  "name": "aura-reader-native",
   "version": "1.0.0",
-  "description": "AI-powered PDF audiobook reader with intelligent bookmarks and persistence.",
+  "description": "React Native version of AuraReader PDF Audiobook player.",
   "main": "index.tsx",
   "dependencies": {
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "@google/genai": "^1.39.0",
-    "react-native": "latest"
+    "react-native": "latest",
+    "react-native-web": "latest",
+    "@google/genai": "^1.39.0"
   },
   "keywords": [
-    "pdf",
+    "react-native",
     "audiobook",
-    "tts",
     "gemini",
-    "bookmarks"
+    "tts"
   ],
   "author": "AuraReader Team"
 }
