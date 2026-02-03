@@ -1,0 +1,5 @@
+{
+  "name": "AuraReader: PDF to Audio Bookmarks",
+  "description": "Transform your PDFs into immersive audiobooks. Upload a book, listen to AI-generated narration, and save bookmarks to pick up exactly where you left off.",
+  "requestFramePermissions": []
+}
