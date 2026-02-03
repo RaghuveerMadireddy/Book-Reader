@@ -1,6 +1,6 @@
 {
   "name": "aura-reader-web",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "description": "Premium PDF Audiobook player using Google Gemini AI for narration and analysis.",
   "main": "index.tsx",
   "scripts": {

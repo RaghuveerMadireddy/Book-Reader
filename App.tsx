@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   BookOpen, 
@@ -12,7 +11,8 @@ import {
   Volume2,
   Loader2,
   AlertCircle,
-  FileText
+  FileText,
+  RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { processPDF, generateSpeech, decodeAudioData } from './services/geminiService';
@@ -157,6 +157,8 @@ const App: React.FC = () => {
         pausedAtRef.current = audioContextRef.current.currentTime - startTimeRef.current;
       }
       stopAudio();
+      // Auto-bookmark on pause to ensure user never loses place
+      saveAutoBookmark();
     } else {
       if (!audioBufferRef.current) {
         const buffer = await loadAudio(currentChapterIndex, pausedAtRef.current);
@@ -165,6 +167,31 @@ const App: React.FC = () => {
         playBuffer(audioBufferRef.current, pausedAtRef.current);
       }
     }
+  };
+
+  const saveAutoBookmark = () => {
+    if (!book) return;
+    const b: Bookmark = {
+      id: "auto-" + Date.now().toString(),
+      title: `Last Position: ${book.chapters[currentChapterIndex].title}`,
+      chapterIndex: currentChapterIndex,
+      timestamp: currentTime,
+      textSnippet: "Resume from your last position...",
+      createdAt: Date.now()
+    };
+    // Keep only one auto-bookmark at the top
+    const otherBookmarks = book.bookmarks.filter(bm => !bm.id.startsWith("auto-"));
+    setBook({ ...book, bookmarks: [b, ...otherBookmarks] });
+  };
+
+  const navigateToBookmark = async (b: Bookmark) => {
+    stopAudio();
+    setCurrentChapterIndex(b.chapterIndex);
+    pausedAtRef.current = b.timestamp;
+    setCurrentTime(b.timestamp);
+    const buffer = await loadAudio(b.chapterIndex, b.timestamp);
+    if (buffer) playBuffer(buffer, b.timestamp);
+    showToast(`Resumed at ${formatTime(b.timestamp)}`);
   };
 
   const navigateToChapter = async (index: number) => {
@@ -180,7 +207,7 @@ const App: React.FC = () => {
     if (buffer) playBuffer(buffer, 0);
   };
 
-  const addBookmark = () => {
+  const addManualBookmark = () => {
     if (!book) return;
     const b: Bookmark = {
       id: Date.now().toString(),
@@ -191,7 +218,7 @@ const App: React.FC = () => {
       createdAt: Date.now()
     };
     setBook({ ...book, bookmarks: [b, ...book.bookmarks] });
-    showToast("Bookmark saved! You can resume from here anytime.");
+    showToast("Bookmark saved!");
   };
 
   const clearBook = () => {
@@ -345,7 +372,7 @@ const App: React.FC = () => {
                     <motion.button 
                       whileHover={{ backgroundColor: '#ede9fe' }}
                       className="bookmark-btn" 
-                      onClick={addBookmark}
+                      onClick={addManualBookmark}
                     >
                       <BookmarkIcon size={18} />
                       <span>Bookmark</span>
@@ -355,7 +382,7 @@ const App: React.FC = () => {
               </section>
 
               <section className="bookmarks-section">
-                <h3>Your Bookmarks</h3>
+                <h3>Resuming Points</h3>
                 {book.bookmarks.length === 0 ? (
                   <div className="no-items">Pick up exactly where you left off by saving a bookmark.</div>
                 ) : (
@@ -366,14 +393,14 @@ const App: React.FC = () => {
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         whileHover={{ y: -4, borderColor: '#4f46e5' }}
-                        className="bookmark-card" 
-                        onClick={() => navigateToChapter(b.chapterIndex)}
+                        className={`bookmark-card ${b.id.startsWith('auto-') ? 'auto-bm' : ''}`} 
+                        onClick={() => navigateToBookmark(b)}
                       >
                         <div className="b-header">
-                          <Clock size={12} />
+                          {b.id.startsWith('auto-') ? <RotateCcw size={12} /> : <Clock size={12} />}
                           <span>{b.title}</span>
                         </div>
-                        <p className="b-snippet">"{b.textSnippet.substring(0, 75)}..."</p>
+                        <p className="b-snippet">{b.textSnippet.length > 75 ? `"${b.textSnippet.substring(0, 75)}..."` : b.textSnippet}</p>
                       </motion.div>
                     ))}
                   </div>
@@ -472,6 +499,7 @@ const App: React.FC = () => {
 
         .bookmarks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.25rem; }
         .bookmark-card { background: white; border: 1px solid var(--border); padding: 1.5rem; border-radius: 1.75rem; cursor: pointer; transition: all 0.25s; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); }
+        .bookmark-card.auto-bm { border-left: 4px solid var(--primary); background: #f8fafc; }
         .b-header { display: flex; align-items: center; gap: 0.6rem; color: var(--primary); font-weight: 800; font-size: 0.75rem; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
         .b-snippet { font-size: 0.9rem; color: var(--text-sub); line-height: 1.6; font-style: italic; margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
