@@ -1,10 +1,12 @@
 
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 
-const API_KEY = process.env.API_KEY || "";
-
+/**
+ * Helper to get a configured Gemini client.
+ * Always use process.env.API_KEY directly in the constructor as per guidelines.
+ */
 export const getGeminiClient = () => {
-  return new GoogleGenAI({ apiKey: API_KEY });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 /**
@@ -80,7 +82,10 @@ export async function generateSpeech(text: string): Promise<Uint8Array> {
   return decode(base64Audio);
 }
 
-// Helper: Decode base64 to Uint8Array
+/**
+ * Helper: Decode base64 to Uint8Array.
+ * Manual implementation to avoid external dependencies.
+ */
 function decode(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -91,7 +96,10 @@ function decode(base64: string): Uint8Array {
   return bytes;
 }
 
-// Helper: Raw PCM decoding for AudioContext
+/**
+ * Helper: Raw PCM decoding for AudioContext.
+ * The Gemini TTS returns raw PCM data without standard file headers.
+ */
 export async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,

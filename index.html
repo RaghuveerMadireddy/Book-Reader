@@ -10,16 +10,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
       #root { display: flex; min-height: 100vh; flex-direction: column; }
-      body, html { height: 100%; margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Inter', sans-serif; }
+      body, html { height: 100%; margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Inter', sans-serif; overflow: hidden; }
     </style>
     <script type="importmap">
 {
   "imports": {
     "react": "https://esm.sh/react@^19.2.4",
     "react-dom": "https://esm.sh/react-dom@^19.2.4",
+    "react-dom/client": "https://esm.sh/react-dom@^19.2.4/client",
     "react-native": "https://esm.sh/react-native-web@latest",
+    "react-native-svg": "https://esm.sh/react-native-svg@latest",
+    "react-native-safe-area-context": "https://esm.sh/react-native-safe-area-context@latest",
+    "lucide-react-native": "https://esm.sh/lucide-react-native@latest",
     "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
-    "react/": "https://esm.sh/react@^19.2.4/"
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
   }
 }
 </script>

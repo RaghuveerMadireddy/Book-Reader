@@ -11,47 +11,23 @@ import {
   Platform,
   Dimensions
 } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { 
+  BookOpen, 
+  Play, 
+  Pause, 
+  Bookmark as BookmarkIconLucide, 
+  Trash2, 
+  Upload, 
+  ChevronRight,
+  Clock,
+  Volume2
+} from 'lucide-react-native';
 import { processPDF, generateSpeech, decodeAudioData } from './services/geminiService';
 import { Book, Bookmark } from './types';
 import { Button } from './components/Button';
 
 const STORAGE_KEY = "aura_reader_current_book";
-const { width } = Dimensions.get('window');
-
-// Icons as basic SVG functional components for RN
-const BookIcon = ({ color = "currentColor" }) => (
-  <View style={{ width: 24, height: 24 }}>
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-    </svg>
-  </View>
-);
-
-const PlayIcon = ({ color = "white" }) => (
-  <View style={{ width: 24, height: 24 }}>
-    <svg width="24" height="24" viewBox="0 0 24 24" fill={color}>
-      <polygon points="5 3 19 12 5 21 5 3"></polygon>
-    </svg>
-  </View>
-);
-
-const PauseIcon = ({ color = "white" }) => (
-  <View style={{ width: 24, height: 24 }}>
-    <svg width="24" height="24" viewBox="0 0 24 24" fill={color}>
-      <rect x="6" y="4" width="4" height="16"></rect>
-      <rect x="14" y="4" width="4" height="16"></rect>
-    </svg>
-  </View>
-);
-
-const BookmarkIcon = ({ color = "#4f46e5" }) => (
-  <View style={{ width: 20, height: 20 }}>
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
-      <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path>
-    </svg>
-  </View>
-);
 
 const App: React.FC = () => {
   const [book, setBook] = useState<Book | null>(null);
@@ -61,6 +37,7 @@ const App: React.FC = () => {
   const [duration, setDuration] = useState(0);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
 
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -104,6 +81,14 @@ const App: React.FC = () => {
     if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
   };
 
+  const stopAudio = () => {
+    if (sourceNodeRef.current) {
+      sourceNodeRef.current.stop();
+      sourceNodeRef.current = null;
+    }
+    setIsPlaying(false);
+  };
+
   const handleUpload = async (e: any) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -126,6 +111,7 @@ const App: React.FC = () => {
         setCurrentChapterIndex(0);
         pausedAtRef.current = 0;
         setCurrentTime(0);
+        audioBufferRef.current = null;
       } catch (err) {
         setStatusMessage("Analysis failed");
       } finally {
@@ -135,10 +121,11 @@ const App: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const loadAudio = async (idx: number, seek: number = 0) => {
-    if (!book) return;
+  const loadAudio = async (idx: number, seek: number = 0): Promise<AudioBuffer | null> => {
+    if (!book) return null;
     initAudio();
     setIsLoadingAudio(true);
+    setLoadingIndex(idx);
     try {
       const pcm = await generateSpeech(book.chapters[idx].content);
       const buffer = await decodeAudioData(pcm, audioContextRef.current!);
@@ -147,48 +134,83 @@ const App: React.FC = () => {
       pausedAtRef.current = seek;
       setCurrentTime(seek);
       setStatusMessage("");
+      return buffer;
     } catch (err) {
       setStatusMessage("Narration failed");
+      return null;
     } finally {
       setIsLoadingAudio(false);
+      setLoadingIndex(null);
     }
   };
 
-  const togglePlay = () => {
+  const playBuffer = (buffer: AudioBuffer, offset: number) => {
+    if (!audioContextRef.current) return;
+    stopAudio();
+    const source = audioContextRef.current.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContextRef.current.destination);
+    const actualOffset = Math.max(0, Math.min(offset, buffer.duration - 0.1));
+    source.start(0, actualOffset);
+    startTimeRef.current = audioContextRef.current.currentTime - actualOffset;
+    sourceNodeRef.current = source;
+    setIsPlaying(true);
+  };
+
+  const togglePlay = async () => {
     if (isPlaying) {
-      sourceNodeRef.current?.stop();
-      pausedAtRef.current = audioContextRef.current!.currentTime - startTimeRef.current;
-      setIsPlaying(false);
+      if (audioContextRef.current) {
+        pausedAtRef.current = audioContextRef.current.currentTime - startTimeRef.current;
+      }
+      stopAudio();
     } else {
       if (!audioBufferRef.current) {
-        loadAudio(currentChapterIndex, pausedAtRef.current).then(() => {
-          const source = audioContextRef.current!.createBufferSource();
-          source.buffer = audioBufferRef.current!;
-          source.connect(audioContextRef.current!.destination);
-          source.start(0, pausedAtRef.current);
-          startTimeRef.current = audioContextRef.current!.currentTime - pausedAtRef.current;
-          sourceNodeRef.current = source;
-          setIsPlaying(true);
-        });
+        const buffer = await loadAudio(currentChapterIndex, pausedAtRef.current);
+        if (buffer) playBuffer(buffer, pausedAtRef.current);
       } else {
-        const source = audioContextRef.current!.createBufferSource();
-        source.buffer = audioBufferRef.current!;
-        source.connect(audioContextRef.current!.destination);
-        source.start(0, pausedAtRef.current);
-        startTimeRef.current = audioContextRef.current!.currentTime - pausedAtRef.current;
-        sourceNodeRef.current = source;
-        setIsPlaying(true);
+        playBuffer(audioBufferRef.current, pausedAtRef.current);
       }
     }
   };
 
+  const navigateToChapter = async (index: number) => {
+    if (index === currentChapterIndex && audioBufferRef.current) {
+      togglePlay();
+      return;
+    }
+    stopAudio();
+    setCurrentChapterIndex(index);
+    pausedAtRef.current = 0;
+    setCurrentTime(0);
+    const buffer = await loadAudio(index, 0);
+    if (buffer) playBuffer(buffer, 0);
+  };
+
+  const addBookmark = () => {
+    if (!book) return;
+    const b: Bookmark = {
+      id: Date.now().toString(),
+      title: `${book.chapters[currentChapterIndex].title} @ ${formatTime(currentTime)}`,
+      chapterIndex: currentChapterIndex,
+      timestamp: currentTime,
+      textSnippet: book.chapters[currentChapterIndex].content.substring(0, 60),
+      createdAt: Date.now()
+    };
+    setBook({ ...book, bookmarks: [b, ...book.bookmarks] });
+    setStatusMessage("Bookmark saved");
+    setTimeout(() => setStatusMessage(""), 2000);
+  };
+
   useEffect(() => {
     let interval: any;
-    if (isPlaying) {
+    if (isPlaying && audioContextRef.current) {
       interval = setInterval(() => {
         const now = audioContextRef.current!.currentTime - startTimeRef.current;
         setCurrentTime(Math.min(now, duration));
-        if (now >= duration && duration > 0) setIsPlaying(false);
+        if (now >= duration && duration > 0) {
+          setIsPlaying(false);
+          setCurrentTime(duration);
+        }
       }, 100);
     }
     return () => clearInterval(interval);
@@ -201,247 +223,152 @@ const App: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        style={{ display: 'none' }} 
-        accept="application/pdf" 
-        onChange={handleUpload} 
-      />
-      
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.iconContainer}><BookIcon color="#fff" /></View>
-          <Text style={styles.headerTitle}>AuraReader</Text>
-        </View>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onPress={() => fileInputRef.current?.click()}
-          disabled={isProcessing}
-        >
-          {book ? "Change Book" : "Upload PDF"}
-        </Button>
-      </View>
-
-      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
-        {isProcessing ? (
-          <View style={styles.centerBox}>
-            <ActivityIndicator size="large" color="#4f46e5" />
-            <Text style={styles.processingText}>{statusMessage}</Text>
-          </View>
-        ) : !book ? (
-          <View style={styles.heroBox}>
-            <View style={styles.heroIcon}><BookIcon color="#4f46e5" /></View>
-            <Text style={styles.heroTitle}>Your library is empty</Text>
-            <Text style={styles.heroSub}>Upload a PDF and let Gemini transform it into an immersive audiobook experience.</Text>
-            <Button size="lg" onPress={() => fileInputRef.current?.click()}>Pick a PDF</Button>
-          </View>
-        ) : (
-          <>
-            <View style={styles.playerCard}>
-              <View style={styles.bookInfo}>
-                <View style={styles.coverPlaceholder} />
-                <View style={styles.bookDetails}>
-                  <Text style={styles.bookTitle} numberOfLines={2}>{book.title}</Text>
-                  <Text style={styles.bookAuthor}>{book.author}</Text>
-                </View>
-              </View>
-
-              <View style={styles.progressBar}>
-                <View style={styles.track}>
-                  <View style={[styles.progress, { width: `${(currentTime/duration)*100 || 0}%` }]} />
-                </View>
-                <View style={styles.timeRow}>
-                  <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
-                  <Text style={styles.timeText}>{formatTime(duration)}</Text>
-                </View>
-              </View>
-
-              <View style={styles.controls}>
-                <Button 
-                  onPress={togglePlay} 
-                  isLoading={isLoadingAudio}
-                  style={styles.playButton}
-                >
-                  {isPlaying ? <PauseIcon /> : <PlayIcon />}
-                </Button>
-                <TouchableOpacity style={styles.bookmarkAction} onPress={() => {
-                  if (!book) return;
-                  const b: Bookmark = {
-                    id: Date.now().toString(),
-                    title: `Point at ${formatTime(currentTime)}`,
-                    chapterIndex: currentChapterIndex,
-                    timestamp: currentTime,
-                    textSnippet: book.chapters[currentChapterIndex].content.substring(0, 50),
-                    createdAt: Date.now()
-                  };
-                  setBook({ ...book, bookmarks: [b, ...book.bookmarks] });
-                }}>
-                  <BookmarkIcon />
-                  <Text style={styles.bookmarkText}>Save Bookmark</Text>
-                </TouchableOpacity>
-              </View>
+    <SafeAreaProvider style={styles.rootProvider}>
+      <View style={styles.outerContainer}>
+        <SafeAreaView style={styles.container}>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            style={{ display: 'none' }} 
+            accept="application/pdf" 
+            onChange={handleUpload} 
+          />
+          
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <View style={styles.iconContainer}><BookOpen size={20} color="#fff" /></View>
+              <Text style={styles.headerTitle}>AuraReader</Text>
             </View>
-
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Bookmarks</Text>
-            </View>
-            {book.bookmarks.length === 0 ? (
-              <Text style={styles.emptyText}>No bookmarks yet.</Text>
-            ) : (
-              book.bookmarks.map(b => (
-                <TouchableOpacity 
-                  key={b.id} 
-                  style={styles.bookmarkItem}
-                  onPress={async () => {
-                    if (b.chapterIndex !== currentChapterIndex) {
-                      setCurrentChapterIndex(b.chapterIndex);
-                      await loadAudio(b.chapterIndex, b.timestamp);
-                    } else {
-                      pausedAtRef.current = b.timestamp;
-                      setCurrentTime(b.timestamp);
-                    }
-                  }}
-                >
-                  <View>
-                    <Text style={styles.bookmarkLabel}>{b.title}</Text>
-                    <Text style={styles.bookmarkSnippet}>Ch. {b.chapterIndex + 1} - "{b.textSnippet}..."</Text>
-                  </View>
-                </TouchableOpacity>
-              ))
-            )}
-
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Chapters</Text>
-            </View>
-            {book.chapters.map((c, i) => (
-              <TouchableOpacity 
-                key={c.id} 
-                style={[styles.chapterItem, i === currentChapterIndex && styles.activeChapter]}
-                onPress={() => {
-                  setCurrentChapterIndex(i);
-                  loadAudio(i);
-                }}
+            <View style={styles.headerRight}>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onPress={() => fileInputRef.current?.click()}
+                disabled={isProcessing}
               >
-                <Text style={[styles.chapterText, i === currentChapterIndex && styles.activeChapterText]}>
-                  {i + 1}. {c.title}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </>
-        )}
-      </ScrollView>
+                <Upload size={14} style={{ marginRight: 6 }} color="#475569" />
+                <Text>{book ? "Change" : "Upload"}</Text>
+              </Button>
+            </View>
+          </View>
 
-      {statusMessage !== "" && !isProcessing && (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>{statusMessage}</Text>
-        </View>
-      )}
-    </SafeAreaView>
+          <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            {isProcessing ? (
+              <View style={styles.centerBox}>
+                <ActivityIndicator size="large" color="#4f46e5" />
+                <Text style={styles.processingText}>{statusMessage}</Text>
+              </View>
+            ) : !book ? (
+              <View style={styles.heroBox}>
+                <View style={styles.heroIcon}><BookOpen size={48} color="#4f46e5" /></View>
+                <Text style={styles.heroTitle}>Welcome to AuraReader</Text>
+                <Text style={styles.heroSub}>Upload any PDF book to turn it into an audiobook with smart bookmarks.</Text>
+                <Button size="lg" onPress={() => fileInputRef.current?.click()}>Pick a PDF</Button>
+              </View>
+            ) : (
+              <>
+                <View style={styles.playerCard}>
+                  <View style={styles.bookInfo}>
+                    <View style={styles.coverPlaceholder}><BookOpen size={32} color="#fff" opacity={0.3} /></View>
+                    <View style={styles.bookDetails}>
+                      <Text style={styles.bookTitle} numberOfLines={2}>{book.title}</Text>
+                      <Text style={styles.bookAuthor}>{book.author}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.progressBar}>
+                    <View style={styles.track}><View style={[styles.progress, { width: `${(currentTime/duration)*100 || 0}%` }]} /></View>
+                    <View style={styles.timeRow}>
+                      <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
+                      <Text style={styles.timeText}>{formatTime(duration)}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.controls}>
+                    <Button onPress={togglePlay} isLoading={isLoadingAudio} style={styles.playButton}>
+                      {isPlaying ? <Pause size={28} color="white" fill="white" /> : <Play size={28} color="white" fill="white" />}
+                    </Button>
+                    <TouchableOpacity style={styles.bookmarkAction} onPress={addBookmark}>
+                      <BookmarkIconLucide size={18} color="#4f46e5" />
+                      <Text style={styles.bookmarkText}>Bookmark</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <Text style={styles.sectionTitle}>Bookmarks</Text>
+                {book.bookmarks.length === 0 ? <Text style={styles.emptyText}>No bookmarks yet.</Text> : (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bookmarkScroll}>
+                    {book.bookmarks.map(b => (
+                      <TouchableOpacity key={b.id} style={styles.bookmarkCardItem} onPress={() => navigateToChapter(b.chapterIndex)}>
+                        <Text style={styles.bookmarkLabel} numberOfLines={1}>{b.title}</Text>
+                        <Text style={styles.bookmarkSnippet} numberOfLines={2}>{b.textSnippet}...</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+
+                <Text style={styles.sectionTitle}>Chapters</Text>
+                {book.chapters.map((c, i) => {
+                  const isActive = i === currentChapterIndex;
+                  return (
+                    <TouchableOpacity key={c.id} style={[styles.chapterItem, isActive && styles.activeChapter]} onPress={() => navigateToChapter(i)}>
+                      <Text style={[styles.chapterText, isActive && styles.activeText]}>{i + 1}. {c.title}</Text>
+                      <ChevronRight size={18} color={isActive ? "#fff" : "#cbd5e1"} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
+            )}
+          </ScrollView>
+          {statusMessage !== "" && !isProcessing && <View style={styles.toast}><Text style={styles.toastText}>{statusMessage}</Text></View>}
+        </SafeAreaView>
+      </View>
+    </SafeAreaProvider>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    padding: 20, 
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9'
-  },
+  rootProvider: { flex: 1 },
+  outerContainer: { flex: 1, backgroundColor: '#f8fafc' },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   headerLeft: { flexDirection: 'row', alignItems: 'center' },
-  iconContainer: { backgroundColor: '#4f46e5', padding: 6, borderRadius: 8, marginRight: 10 },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
+  headerRight: { flexDirection: 'row', alignItems: 'center' },
+  iconContainer: { backgroundColor: '#4f46e5', padding: 8, borderRadius: 10, marginRight: 12 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
   content: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 40 },
-  heroBox: { 
-    backgroundColor: '#fff', 
-    borderRadius: 20, 
-    padding: 40, 
-    alignItems: 'center', 
-    marginTop: 40,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderStyle: 'dashed'
-  },
-  heroIcon: { backgroundColor: '#f5f3ff', padding: 24, borderRadius: 100, marginBottom: 20 },
-  heroTitle: { fontSize: 22, fontWeight: '700', marginBottom: 10, color: '#1e293b' },
-  heroSub: { textAlign: 'center', color: '#64748b', lineHeight: 22, marginBottom: 30 },
-  centerBox: { padding: 100, alignItems: 'center' },
-  processingText: { marginTop: 20, color: '#4f46e5', fontWeight: '600' },
-  playerCard: { 
-    backgroundColor: '#fff', 
-    borderRadius: 24, 
-    padding: 20, 
-    marginBottom: 30,
-    shadowColor: '#4f46e5',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: '#f1f5f9'
-  },
-  bookInfo: { flexDirection: 'row', marginBottom: 24 },
-  coverPlaceholder: { 
-    width: 80, 
-    height: 110, 
-    backgroundColor: '#4f46e5', 
-    borderRadius: 12, 
-    marginRight: 16 
-  },
+  scrollContent: { padding: 16, paddingBottom: 60 },
+  heroBox: { backgroundColor: '#fff', borderRadius: 24, padding: 40, alignItems: 'center', marginTop: 20, borderWidth: 1, borderColor: '#e2e8f0' },
+  heroIcon: { backgroundColor: '#f5f3ff', padding: 24, borderRadius: 100, marginBottom: 24 },
+  heroTitle: { fontSize: 24, fontWeight: '800', color: '#1e293b' },
+  heroSub: { textAlign: 'center', color: '#64748b', marginBottom: 32 },
+  playerCard: { backgroundColor: '#fff', borderRadius: 24, padding: 24, marginBottom: 24, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 },
+  bookInfo: { flexDirection: 'row', marginBottom: 20 },
+  coverPlaceholder: { width: 64, height: 84, backgroundColor: '#4f46e5', borderRadius: 12, marginRight: 16, alignItems: 'center', justifyContent: 'center' },
   bookDetails: { flex: 1, justifyContent: 'center' },
-  bookTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b', marginBottom: 4 },
-  bookAuthor: { fontSize: 14, color: '#94a3b8', fontWeight: '500' },
+  bookTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b' },
+  bookAuthor: { fontSize: 14, color: '#64748b' },
   progressBar: { marginBottom: 20 },
-  track: { height: 6, backgroundColor: '#f1f5f9', borderRadius: 3, overflow: 'hidden' },
+  track: { height: 8, backgroundColor: '#f1f5f9', borderRadius: 4, overflow: 'hidden' },
   progress: { height: '100%', backgroundColor: '#4f46e5' },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  timeText: { fontSize: 11, color: '#94a3b8', fontWeight: '600', fontFamily: 'monospace' },
+  timeText: { fontSize: 11, color: '#94a3b8', fontWeight: '700' },
   controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   playButton: { width: 64, height: 64, borderRadius: 32 },
-  bookmarkAction: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f3ff', padding: 10, borderRadius: 12 },
-  bookmarkText: { marginLeft: 8, fontSize: 13, fontWeight: '700', color: '#4f46e5' },
-  sectionHeader: { marginTop: 10, marginBottom: 15 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
-  bookmarkItem: { 
-    backgroundColor: '#fff', 
-    padding: 16, 
-    borderRadius: 16, 
-    marginBottom: 10, 
-    borderWidth: 1, 
-    borderColor: '#f1f5f9' 
-  },
-  bookmarkLabel: { fontWeight: '700', fontSize: 14, color: '#334155', marginBottom: 4 },
-  bookmarkSnippet: { fontSize: 12, color: '#94a3b8', fontStyle: 'italic' },
-  chapterItem: { 
-    backgroundColor: '#fff', 
-    padding: 14, 
-    borderRadius: 12, 
-    marginBottom: 6, 
-    borderWidth: 1, 
-    borderColor: '#f1f5f9' 
-  },
-  chapterText: { fontWeight: '600', fontSize: 14, color: '#475569' },
-  activeChapter: { backgroundColor: '#4f46e5', borderColor: '#4f46e5' },
-  activeChapterText: { color: '#fff' },
-  emptyText: { color: '#94a3b8', fontSize: 14, fontStyle: 'italic', paddingVertical: 10 },
-  toast: { 
-    position: 'absolute', 
-    bottom: 20, 
-    left: 20, 
-    right: 20, 
-    backgroundColor: '#1e293b', 
-    padding: 16, 
-    borderRadius: 16,
-    alignItems: 'center'
-  },
-  toastText: { color: '#fff', fontSize: 14, fontWeight: '600' }
+  bookmarkAction: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f3ff', padding: 12, borderRadius: 12 },
+  bookmarkText: { marginLeft: 8, fontSize: 14, fontWeight: '700', color: '#4f46e5' },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b', marginTop: 16, marginBottom: 12 },
+  bookmarkScroll: { marginBottom: 20 },
+  bookmarkCardItem: { backgroundColor: '#fff', padding: 16, borderRadius: 16, marginRight: 12, width: 180, borderWidth: 1, borderColor: '#f1f5f9' },
+  bookmarkLabel: { fontWeight: '800', fontSize: 13, color: '#334155' },
+  bookmarkSnippet: { fontSize: 12, color: '#94a3b8' },
+  chapterItem: { backgroundColor: '#fff', padding: 16, borderRadius: 16, marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  activeChapter: { backgroundColor: '#4f46e5' },
+  activeText: { color: '#fff' },
+  chapterText: { fontWeight: '700', color: '#475569' },
+  emptyText: { color: '#94a3b8', fontStyle: 'italic' },
+  toast: { position: 'absolute', bottom: 32, left: 20, right: 20, backgroundColor: '#0f172a', padding: 16, borderRadius: 12, alignItems: 'center', zIndex: 100 },
+  toastText: { color: '#fff', fontWeight: '700' },
+  centerBox: { padding: 100, alignItems: 'center' },
+  processingText: { marginTop: 16, color: '#4f46e5', fontWeight: '700' }
 });
 
 export default App;

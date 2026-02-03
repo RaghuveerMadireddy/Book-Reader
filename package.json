@@ -1,18 +1,22 @@
 
 {
   "name": "aura-reader-native",
-  "version": "1.0.0",
-  "description": "React Native version of AuraReader PDF Audiobook player.",
+  "version": "1.1.0",
+  "description": "React Native version of AuraReader PDF Audiobook player with full web dependency support.",
   "main": "index.tsx",
   "dependencies": {
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-native": "latest",
     "react-native-web": "latest",
+    "react-native-svg": "latest",
+    "react-native-safe-area-context": "latest",
+    "lucide-react-native": "latest",
     "@google/genai": "^1.39.0"
   },
   "keywords": [
     "react-native",
+    "react-native-web",
     "audiobook",
     "gemini",
     "tts"
