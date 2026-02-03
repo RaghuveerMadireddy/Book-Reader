@@ -1,28 +1,18 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  SafeAreaView, 
-  TouchableOpacity, 
-  ActivityIndicator,
-  Platform,
-  Dimensions
-} from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { 
   BookOpen, 
   Play, 
   Pause, 
-  Bookmark as BookmarkIconLucide, 
+  Bookmark as BookmarkIcon, 
   Trash2, 
   Upload, 
   ChevronRight,
   Clock,
-  Volume2
-} from 'lucide-react-native';
+  Volume2,
+  Loader2,
+  AlertCircle
+} from 'lucide-react';
 import { processPDF, generateSpeech, decodeAudioData } from './services/geminiService';
 import { Book, Bookmark } from './types';
 import { Button } from './components/Button';
@@ -45,7 +35,7 @@ const App: React.FC = () => {
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const startTimeRef = useRef<number>(0);
   const pausedAtRef = useRef<number>(0);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -56,8 +46,7 @@ const App: React.FC = () => {
         setCurrentChapterIndex(parsedBook.lastPlayedChapter || 0);
         pausedAtRef.current = parsedBook.lastPlayedTime || 0;
         setCurrentTime(parsedBook.lastPlayedTime || 0);
-        setStatusMessage("Restored your session");
-        setTimeout(() => setStatusMessage(""), 3000);
+        showToast("Welcome back! Your session has been restored.");
       } catch (e) {
         console.error("Failed to restore", e);
       }
@@ -74,6 +63,11 @@ const App: React.FC = () => {
     }
   }, [book, currentChapterIndex, currentTime]);
 
+  const showToast = (msg: string) => {
+    setStatusMessage(msg);
+    setTimeout(() => setStatusMessage(""), 4000);
+  };
+
   const initAudio = () => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -89,11 +83,12 @@ const App: React.FC = () => {
     setIsPlaying(false);
   };
 
-  const handleUpload = async (e: any) => {
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessing(true);
-    setStatusMessage("Gemini is reading...");
+    showToast("Gemini is analyzing your PDF...");
+    
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const base64 = (ev.target?.result as string).split(',')[1];
@@ -113,7 +108,7 @@ const App: React.FC = () => {
         setCurrentTime(0);
         audioBufferRef.current = null;
       } catch (err) {
-        setStatusMessage("Analysis failed");
+        showToast("Analysis failed. Please try a different PDF.");
       } finally {
         setIsProcessing(false);
       }
@@ -133,10 +128,9 @@ const App: React.FC = () => {
       setDuration(buffer.duration);
       pausedAtRef.current = seek;
       setCurrentTime(seek);
-      setStatusMessage("");
       return buffer;
     } catch (err) {
-      setStatusMessage("Narration failed");
+      showToast("Narration failed. Check your API key.");
       return null;
     } finally {
       setIsLoadingAudio(false);
@@ -193,18 +187,26 @@ const App: React.FC = () => {
       title: `${book.chapters[currentChapterIndex].title} @ ${formatTime(currentTime)}`,
       chapterIndex: currentChapterIndex,
       timestamp: currentTime,
-      textSnippet: book.chapters[currentChapterIndex].content.substring(0, 60),
+      textSnippet: book.chapters[currentChapterIndex].content.substring(0, 100),
       createdAt: Date.now()
     };
     setBook({ ...book, bookmarks: [b, ...book.bookmarks] });
-    setStatusMessage("Bookmark saved");
-    setTimeout(() => setStatusMessage(""), 2000);
+    showToast("Bookmark saved!");
+  };
+
+  const clearBook = () => {
+    if(confirm("Are you sure you want to delete this book?")) {
+      stopAudio();
+      setBook(null);
+      localStorage.removeItem(STORAGE_KEY);
+      showToast("Library cleared.");
+    }
   };
 
   useEffect(() => {
-    let interval: any;
+    let interval: number;
     if (isPlaying && audioContextRef.current) {
-      interval = setInterval(() => {
+      interval = window.setInterval(() => {
         const now = audioContextRef.current!.currentTime - startTimeRef.current;
         setCurrentTime(Math.min(now, duration));
         if (now >= duration && duration > 0) {
@@ -223,152 +225,209 @@ const App: React.FC = () => {
   };
 
   return (
-    <SafeAreaProvider style={styles.rootProvider}>
-      <View style={styles.outerContainer}>
-        <SafeAreaView style={styles.container}>
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            style={{ display: 'none' }} 
-            accept="application/pdf" 
-            onChange={handleUpload} 
-          />
-          
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <View style={styles.iconContainer}><BookOpen size={20} color="#fff" /></View>
-              <Text style={styles.headerTitle}>AuraReader</Text>
-            </View>
-            <View style={styles.headerRight}>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onPress={() => fileInputRef.current?.click()}
-                disabled={isProcessing}
-              >
-                <Upload size={14} style={{ marginRight: 6 }} color="#475569" />
-                <Text>{book ? "Change" : "Upload"}</Text>
-              </Button>
-            </View>
-          </View>
+    <div className="app-container">
+      <header className="app-header">
+        <div className="header-content">
+          <div className="logo">
+            <div className="icon-box"><BookOpen size={20} /></div>
+            <h1>AuraReader</h1>
+          </div>
+          <div className="header-actions">
+            {book && (
+              <button className="icon-btn delete" onClick={clearBook} title="Delete Book">
+                <Trash2 size={18} />
+              </button>
+            )}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              style={{ display: 'none' }} 
+              accept="application/pdf" 
+              onChange={handleUpload} 
+            />
+            <Button onClick={() => fileInputRef.current?.click()} variant="primary" size="sm" isLoading={isProcessing}>
+              <Upload size={16} />
+              <span>{book ? "Change Book" : "Upload PDF"}</span>
+            </Button>
+          </div>
+        </div>
+      </header>
 
-          <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            {isProcessing ? (
-              <View style={styles.centerBox}>
-                <ActivityIndicator size="large" color="#4f46e5" />
-                <Text style={styles.processingText}>{statusMessage}</Text>
-              </View>
-            ) : !book ? (
-              <View style={styles.heroBox}>
-                <View style={styles.heroIcon}><BookOpen size={48} color="#4f46e5" /></View>
-                <Text style={styles.heroTitle}>Welcome to AuraReader</Text>
-                <Text style={styles.heroSub}>Upload any PDF book to turn it into an audiobook with smart bookmarks.</Text>
-                <Button size="lg" onPress={() => fileInputRef.current?.click()}>Pick a PDF</Button>
-              </View>
-            ) : (
-              <>
-                <View style={styles.playerCard}>
-                  <View style={styles.bookInfo}>
-                    <View style={styles.coverPlaceholder}><BookOpen size={32} color="#fff" opacity={0.3} /></View>
-                    <View style={styles.bookDetails}>
-                      <Text style={styles.bookTitle} numberOfLines={2}>{book.title}</Text>
-                      <Text style={styles.bookAuthor}>{book.author}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.progressBar}>
-                    <View style={styles.track}><View style={[styles.progress, { width: `${(currentTime/duration)*100 || 0}%` }]} /></View>
-                    <View style={styles.timeRow}>
-                      <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
-                      <Text style={styles.timeText}>{formatTime(duration)}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.controls}>
-                    <Button onPress={togglePlay} isLoading={isLoadingAudio} style={styles.playButton}>
-                      {isPlaying ? <Pause size={28} color="white" fill="white" /> : <Play size={28} color="white" fill="white" />}
-                    </Button>
-                    <TouchableOpacity style={styles.bookmarkAction} onPress={addBookmark}>
-                      <BookmarkIconLucide size={18} color="#4f46e5" />
-                      <Text style={styles.bookmarkText}>Bookmark</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+      <main className="main-content">
+        {isProcessing ? (
+          <div className="loading-state">
+            <Loader2 className="spinning" size={48} color="#4f46e5" />
+            <p>Gemini is reading your book and generating chapters...</p>
+          </div>
+        ) : !book ? (
+          <div className="empty-state">
+            <div className="hero-icon"><BookOpen size={64} /></div>
+            <h2>Start your listening journey</h2>
+            <p>Upload any PDF and Gemini will transform it into a narrated audiobook experience with smart bookmarking.</p>
+            <Button onClick={() => fileInputRef.current?.click()} size="lg">Get Started</Button>
+          </div>
+        ) : (
+          <div className="player-layout">
+            <section className="player-card">
+              <div className="book-meta">
+                <div className="cover-art">
+                  <Volume2 size={40} />
+                </div>
+                <div className="meta-info">
+                  <h2>{book.title}</h2>
+                  <p>{book.author}</p>
+                </div>
+              </div>
 
-                <Text style={styles.sectionTitle}>Bookmarks</Text>
-                {book.bookmarks.length === 0 ? <Text style={styles.emptyText}>No bookmarks yet.</Text> : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bookmarkScroll}>
-                    {book.bookmarks.map(b => (
-                      <TouchableOpacity key={b.id} style={styles.bookmarkCardItem} onPress={() => navigateToChapter(b.chapterIndex)}>
-                        <Text style={styles.bookmarkLabel} numberOfLines={1}>{b.title}</Text>
-                        <Text style={styles.bookmarkSnippet} numberOfLines={2}>{b.textSnippet}...</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                )}
+              <div className="playback-controls">
+                <div className="progress-container">
+                  <div className="progress-bar">
+                    <div 
+                      className="progress-fill" 
+                      style={{ width: `${(currentTime/duration)*100 || 0}%` }} 
+                    />
+                  </div>
+                  <div className="time-info">
+                    <span>{formatTime(currentTime)}</span>
+                    <span>{formatTime(duration)}</span>
+                  </div>
+                </div>
 
-                <Text style={styles.sectionTitle}>Chapters</Text>
+                <div className="buttons-row">
+                  <div className="spacer" />
+                  <button className="play-pause" onClick={togglePlay} disabled={isLoadingAudio}>
+                    {isLoadingAudio ? <Loader2 className="spinning" /> : (isPlaying ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" />)}
+                  </button>
+                  <button className="bookmark-btn" onClick={addBookmark}>
+                    <BookmarkIcon size={18} />
+                    <span>Bookmark</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="bookmarks-section">
+              <h3>Saved Bookmarks</h3>
+              {book.bookmarks.length === 0 ? (
+                <div className="no-items">No bookmarks yet. Tap the bookmark button while listening.</div>
+              ) : (
+                <div className="bookmarks-grid">
+                  {book.bookmarks.map(b => (
+                    <div key={b.id} className="bookmark-card" onClick={() => navigateToChapter(b.chapterIndex)}>
+                      <div className="b-header">
+                        <Clock size={12} />
+                        <span>{b.title}</span>
+                      </div>
+                      <p className="b-snippet">"{b.textSnippet.substring(0, 80)}..."</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="chapters-section">
+              <h3>Chapters</h3>
+              <div className="chapters-list">
                 {book.chapters.map((c, i) => {
                   const isActive = i === currentChapterIndex;
                   return (
-                    <TouchableOpacity key={c.id} style={[styles.chapterItem, isActive && styles.activeChapter]} onPress={() => navigateToChapter(i)}>
-                      <Text style={[styles.chapterText, isActive && styles.activeText]}>{i + 1}. {c.title}</Text>
-                      <ChevronRight size={18} color={isActive ? "#fff" : "#cbd5e1"} />
-                    </TouchableOpacity>
+                    <button 
+                      key={c.id} 
+                      className={`chapter-item ${isActive ? 'active' : ''}`}
+                      onClick={() => navigateToChapter(i)}
+                    >
+                      <div className="c-info">
+                        <span className="c-num">{i + 1}</span>
+                        <span className="c-title">{c.title}</span>
+                      </div>
+                      <ChevronRight size={18} />
+                    </button>
                   );
                 })}
-              </>
-            )}
-          </ScrollView>
-          {statusMessage !== "" && !isProcessing && <View style={styles.toast}><Text style={styles.toastText}>{statusMessage}</Text></View>}
-        </SafeAreaView>
-      </View>
-    </SafeAreaProvider>
+              </div>
+            </section>
+          </div>
+        )}
+      </main>
+
+      {statusMessage && (
+        <div className="toast-notification">
+          <AlertCircle size={18} />
+          <span>{statusMessage}</span>
+        </div>
+      )}
+
+      <style>{`
+        .app-container { min-height: 100vh; display: flex; flex-direction: column; }
+        .app-header { background: white; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50; }
+        .header-content { max-width: 1000px; margin: 0 auto; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; }
+        .logo { display: flex; align-items: center; gap: 0.75rem; }
+        .logo h1 { font-size: 1.25rem; font-weight: 800; color: var(--text-main); margin: 0; letter-spacing: -0.025em; }
+        .icon-box { background: var(--primary); color: white; padding: 0.5rem; borderRadius: 0.75rem; display: flex; }
+        .header-actions { display: flex; align-items: center; gap: 1rem; }
+        
+        .main-content { max-width: 800px; margin: 0 auto; width: 100%; padding: 2rem 1.5rem; flex: 1; }
+        
+        .empty-state { text-align: center; padding: 4rem 2rem; background: white; border-radius: 2rem; border: 2px dashed var(--border); margin-top: 2rem; }
+        .hero-icon { background: #f5f3ff; color: var(--primary); width: 100px; height: 100px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 2rem; }
+        .empty-state h2 { font-size: 1.75rem; font-weight: 800; margin-bottom: 1rem; }
+        .empty-state p { color: var(--text-sub); margin-bottom: 2.5rem; line-height: 1.6; max-width: 400px; margin-left: auto; margin-right: auto; }
+        
+        .loading-state { text-align: center; padding: 6rem 2rem; }
+        .spinning { animation: spin 1s linear infinite; }
+        .loading-state p { margin-top: 1.5rem; color: var(--primary); font-weight: 600; }
+
+        .player-layout { display: flex; flex-direction: column; gap: 2.5rem; }
+        .player-card { background: white; padding: 2.5rem; border-radius: 2.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.05); border: 1px solid var(--border); }
+        .book-meta { display: flex; gap: 1.5rem; margin-bottom: 2rem; }
+        .cover-art { width: 80px; height: 110px; background: var(--primary); border-radius: 1rem; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.4); }
+        .meta-info h2 { font-size: 1.5rem; font-weight: 800; margin: 0 0 0.25rem 0; line-height: 1.2; }
+        .meta-info p { font-size: 1rem; color: var(--text-sub); margin: 0; font-weight: 500; }
+
+        .progress-bar { height: 8px; background: #f1f5f9; border-radius: 4px; overflow: hidden; margin-bottom: 0.75rem; position: relative; }
+        .progress-fill { height: 100%; background: var(--primary); transition: width 0.1s linear; }
+        .time-info { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-sub); font-weight: 700; font-family: monospace; }
+        
+        .buttons-row { display: flex; align-items: center; justify-content: space-between; margin-top: 2rem; }
+        .play-pause { width: 72px; height: 72px; border-radius: 50%; background: var(--primary); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; box-shadow: 0 10px 20px rgba(79, 70, 229, 0.3); }
+        .play-pause:hover { transform: scale(1.05); }
+        .play-pause:active { transform: scale(0.95); }
+        .bookmark-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; background: #f5f3ff; color: var(--primary); border: none; border-radius: 1rem; cursor: pointer; font-weight: 700; font-size: 0.875rem; }
+        .bookmark-btn:hover { background: #ede9fe; }
+
+        .chapters-section h3, .bookmarks-section h3 { font-size: 1.25rem; font-weight: 800; margin-bottom: 1.25rem; }
+        .chapters-list { display: flex; flex-direction: column; gap: 0.75rem; }
+        .chapter-item { display: flex; align-items: center; justify-content: space-between; background: white; border: 1px solid var(--border); padding: 1.25rem; border-radius: 1.25rem; cursor: pointer; text-align: left; transition: all 0.2s; }
+        .chapter-item:hover { border-color: var(--primary); transform: translateX(4px); }
+        .chapter-item.active { background: var(--primary); border-color: var(--primary); color: white; }
+        .c-info { display: flex; align-items: center; gap: 1rem; }
+        .c-num { font-weight: 800; font-size: 0.875rem; opacity: 0.5; width: 24px; }
+        .c-title { font-weight: 700; }
+
+        .bookmarks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
+        .bookmark-card { background: white; border: 1px solid var(--border); padding: 1.25rem; border-radius: 1.25rem; cursor: pointer; transition: all 0.2s; }
+        .bookmark-card:hover { border-color: var(--primary); background: #fafafa; }
+        .b-header { display: flex; align-items: center; gap: 0.5rem; color: var(--primary); font-weight: 800; font-size: 0.75rem; margin-bottom: 0.5rem; }
+        .b-snippet { font-size: 0.875rem; color: var(--text-sub); line-height: 1.5; font-style: italic; margin: 0; }
+
+        .icon-btn { border: none; background: transparent; cursor: pointer; padding: 0.5rem; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; }
+        .icon-btn.delete { color: #ef4444; }
+        .icon-btn.delete:hover { background: #fee2e2; }
+
+        .toast-notification { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: #1e293b; color: white; padding: 1rem 1.5rem; border-radius: 1rem; display: flex; align-items: center; gap: 0.75rem; box-shadow: 0 10px 15px rgba(0,0,0,0.2); animation: slideUp 0.3s ease-out; z-index: 100; font-weight: 600; font-size: 0.875rem; }
+        
+        @keyframes slideUp { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        @media (max-width: 640px) {
+          .main-content { padding: 1rem; }
+          .player-card { padding: 1.5rem; }
+          .book-meta { flex-direction: column; text-align: center; align-items: center; }
+          .bookmarks-grid { grid-template-columns: 1fr; }
+        }
+      `}</style>
+    </div>
   );
 };
-
-const styles = StyleSheet.create({
-  rootProvider: { flex: 1 },
-  outerContainer: { flex: 1, backgroundColor: '#f8fafc' },
-  container: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center' },
-  headerRight: { flexDirection: 'row', alignItems: 'center' },
-  iconContainer: { backgroundColor: '#4f46e5', padding: 8, borderRadius: 10, marginRight: 12 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
-  content: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 60 },
-  heroBox: { backgroundColor: '#fff', borderRadius: 24, padding: 40, alignItems: 'center', marginTop: 20, borderWidth: 1, borderColor: '#e2e8f0' },
-  heroIcon: { backgroundColor: '#f5f3ff', padding: 24, borderRadius: 100, marginBottom: 24 },
-  heroTitle: { fontSize: 24, fontWeight: '800', color: '#1e293b' },
-  heroSub: { textAlign: 'center', color: '#64748b', marginBottom: 32 },
-  playerCard: { backgroundColor: '#fff', borderRadius: 24, padding: 24, marginBottom: 24, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 },
-  bookInfo: { flexDirection: 'row', marginBottom: 20 },
-  coverPlaceholder: { width: 64, height: 84, backgroundColor: '#4f46e5', borderRadius: 12, marginRight: 16, alignItems: 'center', justifyContent: 'center' },
-  bookDetails: { flex: 1, justifyContent: 'center' },
-  bookTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b' },
-  bookAuthor: { fontSize: 14, color: '#64748b' },
-  progressBar: { marginBottom: 20 },
-  track: { height: 8, backgroundColor: '#f1f5f9', borderRadius: 4, overflow: 'hidden' },
-  progress: { height: '100%', backgroundColor: '#4f46e5' },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  timeText: { fontSize: 11, color: '#94a3b8', fontWeight: '700' },
-  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  playButton: { width: 64, height: 64, borderRadius: 32 },
-  bookmarkAction: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f3ff', padding: 12, borderRadius: 12 },
-  bookmarkText: { marginLeft: 8, fontSize: 14, fontWeight: '700', color: '#4f46e5' },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b', marginTop: 16, marginBottom: 12 },
-  bookmarkScroll: { marginBottom: 20 },
-  bookmarkCardItem: { backgroundColor: '#fff', padding: 16, borderRadius: 16, marginRight: 12, width: 180, borderWidth: 1, borderColor: '#f1f5f9' },
-  bookmarkLabel: { fontWeight: '800', fontSize: 13, color: '#334155' },
-  bookmarkSnippet: { fontSize: 12, color: '#94a3b8' },
-  chapterItem: { backgroundColor: '#fff', padding: 16, borderRadius: 16, marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  activeChapter: { backgroundColor: '#4f46e5' },
-  activeText: { color: '#fff' },
-  chapterText: { fontWeight: '700', color: '#475569' },
-  emptyText: { color: '#94a3b8', fontStyle: 'italic' },
-  toast: { position: 'absolute', bottom: 32, left: 20, right: 20, backgroundColor: '#0f172a', padding: 16, borderRadius: 12, alignItems: 'center', zIndex: 100 },
-  toastText: { color: '#fff', fontWeight: '700' },
-  centerBox: { padding: 100, alignItems: 'center' },
-  processingText: { marginTop: 16, color: '#4f46e5', fontWeight: '700' }
-});
 
 export default App;
