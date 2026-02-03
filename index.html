@@ -4,7 +4,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AuraReader | Immersive Audiobooks</title>
+    <title>AuraReader | Immersive AI Audiobooks</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -17,6 +17,7 @@
         --text-main: #0f172a;
         --text-sub: #64748b;
         --border: #e2e8f0;
+        --success: #10b981;
       }
       * { box-sizing: border-box; }
       body {
@@ -27,17 +28,25 @@
         color: var(--text-main);
         -webkit-font-smoothing: antialiased;
         overflow-x: hidden;
+        min-height: 100vh;
       }
       #root { min-height: 100vh; display: flex; flex-direction: column; }
+      
+      /* Smooth scrollbars */
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
     <script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-dom": "https://esm.sh/react-dom@^19.2.4",
-    "react-dom/client": "https://esm.sh/react-dom@^19.2.4/client",
-    "lucide-react": "https://esm.sh/lucide-react@latest",
-    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react,react-dom",
+    "framer-motion": "https://esm.sh/framer-motion@11.11.11?external=react,react-dom",
+    "@google/genai": "https://esm.sh/@google/genai@1.3.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
     "react/": "https://esm.sh/react@^19.2.4/"
   }
