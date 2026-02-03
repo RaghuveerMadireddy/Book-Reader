@@ -1,9 +1,13 @@
-
 {
   "name": "aura-reader-web",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Premium PDF Audiobook player using Google Gemini AI for narration and analysis.",
   "main": "index.tsx",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "expo": "echo 'Web-only project; skipping expo command'"
+  },
   "dependencies": {
     "react": "19.0.0",
     "react-dom": "19.0.0",
